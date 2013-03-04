@@ -6,4 +6,5 @@ Files:
 
 SdramCtrl.v        - SDRAM controller.
 HostIO.v           - PC <-> FPGA communication through the JTAG port.
+Math.v             - Math helper functions for other modules.
 Test.v             - Test module.

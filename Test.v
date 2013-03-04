@@ -14,16 +14,17 @@
 // Foundation, Inc., 59 Temple Place - Suite 330, Boston, MA
 // 02111-1307, USA.
 //
-// ©2013 - Roman Ovseitsev <romovs@gmail.com>   
-// Based on code ©2011 - X Engineering Software Systems Corp. (www.xess.com)   
+// ©2013 - Roman Ovseitsev <romovs@gmail.com>      
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
+//##################################################################################################
+//
+// Test module for HostIo functions and the SDRAM controller.
+// 
+//##################################################################################################
 
 `timescale 1ns / 1ps
 
-//**************************************************************************************************
-// Test module for HostIo functions and the SDRAM controller. 
-//**************************************************************************************************
 
 module test (clk_i, sdClk_o, sdClkFb_i, sdRas_bo, sdCas_bo, sdWe_bo, sdBs_o, sdAddr_o, sdData_io);
 
@@ -166,7 +167,7 @@ module testRam (drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o, clk_i,
     
    SdramCtrl sdram 
    (
-      .clk_i(clk_i),
+      .clk_i(sdClkFb_i),
       .lock_i(1'b1),     
       .rst_i(1'b0),     
       .rd_i(rdSdram),    
@@ -205,8 +206,6 @@ module testCnt (drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o);
    reg         [4:0] from = 0;
    (* BUFFER_TYPE="BUFG" *) 
    wire        clkDut;
-   wire        [4:0] cnt;
-   
 
    HostIODut #(.ID(1), .FROM_DUT_LENGTH(5), .TO_DUT_LENGTH(4)) hostiodut 
    (

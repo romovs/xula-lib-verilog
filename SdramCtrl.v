@@ -18,15 +18,14 @@
 // Based on code ©2011 - X Engineering Software Systems Corp. (www.xess.com)
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-//**************************************************************************************************
-// SDRAM controller
+//##################################################################################################
+//
+// SDRAM controller for XuLA-200.
 //
 // - Dual port interface not ported.
-// - Frequency set by parameter FREQ should not exceed 67MHz. This is due to 32bit limitation 
-//   in localparam expressions. For higher clocks modify REF_CYCLES_C to avoid overflows.  
 // - MULTIPLE_ACTIVE_ROWS functionality not implemented.
-//**************************************************************************************************
+//
+//##################################################################################################
 
 `timescale 1ns / 1ps
 
@@ -35,11 +34,12 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                   rdDone_o, addr_i, data_i, data_o, status_o, sdCke_o, sdCe_bo, sdRas_bo, sdCas_bo,
                   sdWe_bo, sdBs_o, sdAddr_o, sdData_io, sdDqmh_o, sdDqml_o);
                   
-   parameter   FREQ = 12;                 // Operating frequency in MHz. Should not exceed 67MHz
-                                          // due to overflow in REF_CYCLES_C expression: T_REF * FREQ > 2^32-1          
-                           
+   `include "Math.v"           
+                  
+   parameter   real FREQ = 12.0;          // Operating frequency in MHz.
+   parameter   PIPE_EN = 0;               // If true, enable pipelined read operations.    
+   
    localparam  IN_PHASE = 1;              // SDRAM and controller work on same or opposite clock edge.
-   localparam  PIPE_EN = 0;               // If true, enable pipelined read operations.
    localparam  MAX_NOPS = 10000;          // Number of NOPs before entering self-refresh.
    localparam  ENABLE_REFRESH = 1;        // If true, row refreshes are automatically inserted.
    localparam  MULTIPLE_ACTIVE_ROWS = 0;  // If true, allow an active row in each bank. DON'T! change. Not implemented!
@@ -51,13 +51,13 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    localparam  NCOLS = 512;               // Number of columns in SDRAM array.
    localparam  HADDR_WIDTH = 23;          // Host-side address width.
    localparam  SADDR_WIDTH = 12;          // SDRAM-side address width.
-   localparam  T_INIT = 200000;           // min initialization interval (ns).
-   localparam  T_RAS = 45;                // min interval between active to precharge commands (ns).
-   localparam  T_RCD = 20;                // min interval between active and R/W commands (ns).
-   localparam  T_REF = 64000000;          // maximum refresh interval (ns).
-   localparam  T_RFC = 65;                // duration of refresh operation (ns).
-   localparam  T_RP = 20;                 // min precharge command duration (ns).
-   localparam  T_XSR = 75;                // exit self-refresh time (ns).
+   localparam  T_INIT = 200000.0;         // min initialization interval (ns).
+   localparam  T_RAS = 42.0;              // min interval between active to precharge commands (ns).
+   localparam  T_RCD = 15.0;              // min interval between active and R/W commands (ns).
+   localparam  T_REF = 64000000.0;        // maximum refresh interval (ns).
+   localparam  T_RFC = 60.0;              // duration of refresh operation (ns).
+   localparam  T_RP = 15.0;               // min precharge command duration (ns).
+   localparam  T_XSR = 72.0;              // exit self-refresh time (ns). 
 
    // Host side.
    input wire  clk_i;                     // Master clock.
@@ -95,33 +95,33 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    localparam  WRITE_C = 1;               // write operation.
 
    // SDRAM timing parameters converted into clock cycles (based on FREQ).    
-   localparam  INIT_CYCLES_C = T_INIT*FREQ/1000;   // SDRAM power-on initialization interval.
-   localparam  RAS_CYCLES_C = T_RAS*FREQ/1000;     // active-to-precharge interval.
-   localparam  RCD_CYCLES_C = T_RCD*FREQ/1000;     // active-to-R/W interval.
-   localparam  REF_CYCLES_C = T_REF*FREQ/1000/NROWS;// interval between row refreshes.
-   localparam  RFC_CYCLES_C = T_RFC*FREQ/1000;     // refresh operation interval.
-   localparam  RP_CYCLES_C = T_RP*FREQ/1000;       // precharge operation interval.
-   localparam  WR_CYCLES_C = 2;                    // write recovery time.
-   localparam  XSR_CYCLES_C = T_XSR*FREQ/1000;     // exit self-refresh time.
-   localparam  MODE_CYCLES_C = 2;                  // mode register setup time.
-   localparam  CAS_CYCLES_C = 3;                   // CAS latency.
-   localparam  RFSH_OPS_C = 8;                     // number of refresh operations needed to init SDRAM.
-   
+   localparam  INIT_CYCLES_C = ceil(T_INIT*FREQ/1000);    // SDRAM power-on initialization interval.
+   localparam  RAS_CYCLES_C = ceil(T_RAS*FREQ/1000);      // active-to-precharge interval.
+   localparam  RCD_CYCLES_C = pfx(ceil(T_RCD*FREQ/1000)); // active-to-R/W interval.
+   localparam  REF_CYCLES_C = ceil(T_REF*FREQ/1000/NROWS);// interval between row refreshes.
+   localparam  RFC_CYCLES_C = ceil(T_RFC*FREQ/1000);      // refresh operation interval. 
+   localparam  RP_CYCLES_C = ceil(T_RP*FREQ/1000);        // precharge operation interval.
+   localparam  WR_CYCLES_C = 2;                           // write recovery time.
+   localparam  XSR_CYCLES_C = ceil(T_XSR*FREQ/1000);      // exit self-refresh time.
+   localparam  MODE_CYCLES_C = 2;                         // mode register setup time.
+   localparam  CAS_CYCLES_C = 3;                          // CAS latency.
+   localparam  RFSH_OPS_C = 8;                            // number of refresh operations needed to init SDRAM.
+  
    // timer registers that count down times for various SDRAM operations.
    reg         [clog2(INIT_CYCLES_C):0] timer_r = 0;     // current SDRAM op time.
    reg         [clog2(INIT_CYCLES_C):0] timer_x = 0;
    reg         [clog2(RAS_CYCLES_C):0] rasTimer_r = 0;   // active-to-precharge time.
    reg         [clog2(RAS_CYCLES_C):0] rasTimer_x = 0;
-   reg         [clog2(WR_CYCLES_C ):0] wrTimer_r = 0;    // write-to-precharge time.
-   reg         [clog2(WR_CYCLES_C ):0] wrTimer_x = 0;
+   reg         [clog2(WR_CYCLES_C):0] wrTimer_r = 0;     // write-to-precharge time.
+   reg         [clog2(WR_CYCLES_C):0] wrTimer_x = 0;
    reg         [clog2(REF_CYCLES_C):0] refTimer_r = REF_CYCLES_C;// time between row refreshes.
    reg         [clog2(REF_CYCLES_C):0] refTimer_x = REF_CYCLES_C;
-   reg         [clog2(NROWS):0] rfshCntr_r = 0;          // counts refreshes that are neede.
+   reg         [clog2(NROWS):0] rfshCntr_r = 0;          // counts refreshes that are needed.
    reg         [clog2(NROWS):0] rfshCntr_x = 0;
    reg         [clog2(MAX_NOPS):0] nopCntr_r = 0;        // counts consecutive NOP_C operations.
    reg         [clog2(MAX_NOPS):0] nopCntr_x = 0;
 
-   reg                            doSelfRfsh_s;       // active when the NOP counter hits zero and self-refresh can start.
+   reg          doSelfRfsh_s;       // active when the NOP counter hits zero and self-refresh can start.
 
    // states of the SDRAM controller state machine.
    localparam  INITWAIT    = 'b000;       // initialization - waiting for power-on initialization to complete.
@@ -155,15 +155,15 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    localparam  COL_LEN_C = clog2(NCOLS);  // number of column address bits.
    
    reg         [BANK_ADDR_BITS-1:0] bank_s;  // bank address bits.
-   reg         [ROW_LEN_C-1:0] row_s;        // row address within bank.
+   reg         [ROW_LEN_C:0] row_s;          // row address within bank.
    reg         [SADDR_WIDTH-1:0] col_s;      // column address within row.
 
    // registers that store the currently active row in each bank of the SDRAM.
    localparam  NUM_ACTIVE_ROWS = (MULTIPLE_ACTIVE_ROWS == 0 ? 1 : 2**BANK_ADDR_BITS);
    localparam  NUM_ACTIVE_ROWS_WIDTH = (MULTIPLE_ACTIVE_ROWS == 0 ? 1 : clog2(2**BANK_ADDR_BITS));
    
-   reg         [ROW_LEN_C-1 : 0] activeRow_r [NUM_ACTIVE_ROWS_WIDTH-1:0];
-   reg         [ROW_LEN_C-1 : 0] activeRow_x [NUM_ACTIVE_ROWS_WIDTH-1:0];
+   reg         [ROW_LEN_C-1:0] activeRow_r [NUM_ACTIVE_ROWS_WIDTH-1:0];
+   reg         [ROW_LEN_C-1:0] activeRow_x [NUM_ACTIVE_ROWS_WIDTH-1:0];
    reg         [0:NUM_ACTIVE_ROWS-1] activeFlag_r = 0;   // indicates that some row in a bank is active.
    reg         [0:NUM_ACTIVE_ROWS-1] activeFlag_x = 0; 
    reg         [NUM_ACTIVE_ROWS_WIDTH-1:0] bankIndex_s;  // bank address bits.
@@ -217,7 +217,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    assign sdCke_o  = cke_r;   // SDRAM clock enable
    assign sdBs_o  = ba_r;     // SDRAM bank address
    assign sdAddr_o = sAddr_r; // SDRAM address
-   assign sdData_io = (sDataDir_r == OUTPUT_C) ? sData_r : 'bzzzzzzzz_zzzzzzzz;  // SDRAM output data bus
+   assign sdData_io = (sDataDir_r == OUTPUT_C) ? sData_r : 16'bz;  // SDRAM output data bus
    
    // attach some port signals
    assign data_o = sdramData_r;     // data back to host
@@ -227,9 +227,9 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    // compute the next state and outputs 
    //*********************************************************************
   
-   always @(rd_i, wr_i, addr_i, data_i, sdramData_r, sdData_io, state_r, opBegun_x, activeFlag_r, activeRow_r[0], 
-            activeBank_r, rdPipeline_r, wrPipeline_r, sdramDataOppPhase_r, nopCntr_r, lock_i, rfshCntr_r,
-            timer_r, rasTimer_r, wrTimer_r, refTimer_r, cmd_r, col_s, ba_r, cke_r,
+   always @(rd_i, wr_i, addr_i, data_i, sdramData_r, sdData_io, state_r, opBegun_x, activeFlag_r, 
+            activeRow_r[0], activeBank_r, rdPipeline_r, wrPipeline_r, sdramDataOppPhase_r, nopCntr_r, 
+            lock_i, rfshCntr_r, timer_r, rasTimer_r, wrTimer_r, refTimer_r, cmd_r, col_s, ba_r, cke_r,
             rdInProgress_s, activateInProgress_s, wrInProgress_s, doActivate_s, doSelfRfsh_s
             ) begin
 
@@ -265,10 +265,10 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
          bankIndex_s = 0;
       end
       // extract row, column fields from host address
-      row_s = addr_i[ROW_LEN_C + COL_LEN_C - 1 : COL_LEN_C]; // 20:9
+      row_s = addr_i[ROW_LEN_C + COL_LEN_C - 1 : COL_LEN_C];
       // extend column (if needed) until it is as large as the (SDRAM address bus - 1)
       col_s = 0; // set it to all zeroes
-      col_s[COL_LEN_C-1 : 0] = addr_i[COL_LEN_C-1 : 0]; // 8:0
+      col_s[COL_LEN_C-1 : 0] = addr_i[COL_LEN_C-1 : 0];
       // by default, set SDRAM address to the column address with interspersed
       // command bit set to disable auto-precharge
       sAddr_x   = {col_s[SADDR_WIDTH-1 : CMDBIT_POS_C], AUTO_PCHG_OFF_C, col_s[CMDBIT_POS_C-1 : 0]};
@@ -294,13 +294,13 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
       // transfer data from SDRAM to the host data register if a read flag has exited the pipeline
       // (the transfer occurs 1 cycle before we tell the host the read operation is done)
       if (rdPipeline_r[1] == READ_C) begin
-         sdramDataOppPhase_x = sdData_io[DATA_WIDTH   -1:0];  // gets value on the SDRAM databus on the opposite phase
+         sdramDataOppPhase_x = sdData_io[DATA_WIDTH-1:0];  // gets value on the SDRAM databus on the opposite phase
          if (IN_PHASE == 1) begin
            // get the SDRAM data for the host directly from the SDRAM if the controller and SDRAM are in-phase
-           sdramData_x = sdData_io[DATA_WIDTH   -1:0];
+           sdramData_x = sdData_io[DATA_WIDTH-1:0];
          end else begin
            // otherwise get the SDRAM data that was gathered on the previous opposite clock edge
-           sdramData_x = sdramDataOppPhase_r[DATA_WIDTH   -1:0];
+           sdramData_x = sdramDataOppPhase_r[DATA_WIDTH-1:0];
          end
       end else begin
          // retain contents of host data registers if no data from the SDRAM has arrived yet
@@ -674,14 +674,4 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
       end
    end
 
-
-   function integer clog2;
-      input integer value;
-      begin  
-         value = value-1;
-         for (clog2=0; value>0; clog2=clog2+1)
-            value = value>>1;
-      end  
-   endfunction
-   
 endmodule
