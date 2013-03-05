@@ -20,10 +20,7 @@
 
 //##################################################################################################
 //
-// SDRAM controller for XuLA-200.
-//
-// - Dual port interface not ported.
-// - MULTIPLE_ACTIVE_ROWS functionality not implemented.
+// Single Port SDRAM controller for XuLA-200.
 //
 //##################################################################################################
 
@@ -35,29 +32,39 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                   sdWe_bo, sdBs_o, sdAddr_o, sdData_io, sdDqmh_o, sdDqml_o);
                   
    `include "Math.v"           
-                  
+
+         
    parameter   real FREQ = 12.0;          // Operating frequency in MHz.
-   parameter   PIPE_EN = 0;               // If true, enable pipelined read operations.    
+   parameter   PIPE_EN = 0;               // If true, enable pipelined read operations.
+
+   //`define     MULTIPLE_ACTIVE_ROWS_D     // If defined allow an active row in each bank.
    
    localparam  IN_PHASE = 1;              // SDRAM and controller work on same or opposite clock edge.
    localparam  MAX_NOPS = 10000;          // Number of NOPs before entering self-refresh.
    localparam  ENABLE_REFRESH = 1;        // If true, row refreshes are automatically inserted.
-   localparam  MULTIPLE_ACTIVE_ROWS = 0;  // If true, allow an active row in each bank. DON'T! change. Not implemented!
-   localparam  DATA_WIDTH = 16;           // Host & SDRAM data width.
-   localparam  BANK_ADDR_BITS = 2;
    
-   // Parameters for Winbond W9812G6JH-75 (all times are in nanoseconds).
+   `ifdef      MULTIPLE_ACTIVE_ROWS_D
+      localparam  MULTIPLE_ACTIVE_ROWS = 1;  // If true, allow an active row in each bank. 
+   `else
+      localparam  MULTIPLE_ACTIVE_ROWS = 0;
+   `endif
+   
+   localparam  DATA_WIDTH = 16;           // Host & SDRAM data width.
+
+   // Parameters for Winbond W9812G6JH-6 (all times are in nanoseconds).
    localparam  NROWS = 4096;              // Number of rows in SDRAM array.
    localparam  NCOLS = 512;               // Number of columns in SDRAM array.
    localparam  HADDR_WIDTH = 23;          // Host-side address width.
    localparam  SADDR_WIDTH = 12;          // SDRAM-side address width.
-   localparam  T_INIT = 200000.0;         // min initialization interval (ns).
-   localparam  T_RAS = 42.0;              // min interval between active to precharge commands (ns).
-   localparam  T_RCD = 15.0;              // min interval between active and R/W commands (ns).
-   localparam  T_REF = 64000000.0;        // maximum refresh interval (ns).
-   localparam  T_RFC = 60.0;              // duration of refresh operation (ns).
-   localparam  T_RP = 15.0;               // min precharge command duration (ns).
-   localparam  T_XSR = 72.0;              // exit self-refresh time (ns). 
+   localparam  BANK_ADDR_WIDTH = 2;       // Width of the bank address. Requires additional changes
+                                          // of logic related to activeRow_r if modified.
+   localparam  real T_INIT = 200000.0;    // min initialization interval (ns).
+   localparam  real T_RAS = 42.0;         // min interval between active to precharge commands (ns).
+   localparam  real T_RCD = 15.0;         // min interval between active and R/W commands (ns).
+   localparam  real T_REF = 64000000.0;   // maximum refresh interval (ns).
+   localparam  real T_RFC = 60.0;         // duration of refresh operation (ns).
+   localparam  real T_RP = 15.0;          // min precharge command duration (ns).
+   localparam  real T_XSR = 72.0;         // exit self-refresh time (ns). 
 
    // Host side.
    input wire  clk_i;                     // Master clock.
@@ -81,7 +88,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    output      sdRas_bo;                  // SDRAM row address strobe.
    output      sdCas_bo;                  // SDRAM column address strobe.
    output      sdWe_bo;                   // SDRAM write enable.
-   output      [BANK_ADDR_BITS-1:0] sdBs_o;  // SDRAM bank address.
+   output      [BANK_ADDR_WIDTH-1:0] sdBs_o; // SDRAM bank address.
    output      [SADDR_WIDTH-1:0] sdAddr_o;   // SDRAM row/column address.
    inout       [DATA_WIDTH-1:0] sdData_io;   // Data to/from SDRAM.
    output      sdDqmh_o;                  // Enable upper-byte of SDRAM databus if true.
@@ -95,17 +102,17 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    localparam  WRITE_C = 1;               // write operation.
 
    // SDRAM timing parameters converted into clock cycles (based on FREQ).    
-   localparam  INIT_CYCLES_C = ceil(T_INIT*FREQ/1000);    // SDRAM power-on initialization interval.
-   localparam  RAS_CYCLES_C = ceil(T_RAS*FREQ/1000);      // active-to-precharge interval.
-   localparam  RCD_CYCLES_C = pfx(ceil(T_RCD*FREQ/1000)); // active-to-R/W interval.
-   localparam  REF_CYCLES_C = ceil(T_REF*FREQ/1000/NROWS);// interval between row refreshes.
-   localparam  RFC_CYCLES_C = ceil(T_RFC*FREQ/1000);      // refresh operation interval. 
-   localparam  RP_CYCLES_C = ceil(T_RP*FREQ/1000);        // precharge operation interval.
-   localparam  WR_CYCLES_C = 2;                           // write recovery time.
-   localparam  XSR_CYCLES_C = ceil(T_XSR*FREQ/1000);      // exit self-refresh time.
-   localparam  MODE_CYCLES_C = 2;                         // mode register setup time.
-   localparam  CAS_CYCLES_C = 3;                          // CAS latency.
-   localparam  RFSH_OPS_C = 8;                            // number of refresh operations needed to init SDRAM.
+   localparam  INIT_CYCLES_C = ceil(T_INIT*FREQ/1000.0);    // SDRAM power-on initialization interval.
+   localparam  RAS_CYCLES_C = ceil(T_RAS*FREQ/1000.0);      // active-to-precharge interval.
+   localparam  RCD_CYCLES_C = pfx(ceil(T_RCD*FREQ/1000.0)); // active-to-R/W interval.
+   localparam  REF_CYCLES_C = ceil(T_REF*FREQ/1000.0/NROWS);// interval between row refreshes.
+   localparam  RFC_CYCLES_C = ceil(T_RFC*FREQ/1000.0);      // refresh operation interval. 
+   localparam  RP_CYCLES_C = ceil(T_RP*FREQ/1000.0);        // precharge operation interval.
+   localparam  WR_CYCLES_C = 2;                             // write recovery time.
+   localparam  XSR_CYCLES_C = ceil(T_XSR*FREQ/1000.0);      // exit self-refresh time.
+   localparam  MODE_CYCLES_C = 2;                           // mode register setup time.
+   localparam  CAS_CYCLES_C = 3;                            // CAS latency.
+   localparam  RFSH_OPS_C = 8;                              // number of refresh operations needed to init SDRAM.
   
    // timer registers that count down times for various SDRAM operations.
    reg         [clog2(INIT_CYCLES_C):0] timer_r = 0;     // current SDRAM op time.
@@ -154,21 +161,21 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    localparam  ROW_LEN_C = clog2(NROWS);  // number of row address bits.
    localparam  COL_LEN_C = clog2(NCOLS);  // number of column address bits.
    
-   reg         [BANK_ADDR_BITS-1:0] bank_s;  // bank address bits.
-   reg         [ROW_LEN_C:0] row_s;          // row address within bank.
+   reg         [BANK_ADDR_WIDTH-1:0] bank_s; // bank address bits.
+   reg         [ROW_LEN_C-1:0] row_s;        // row address within bank.
    reg         [SADDR_WIDTH-1:0] col_s;      // column address within row.
 
    // registers that store the currently active row in each bank of the SDRAM.
-   localparam  NUM_ACTIVE_ROWS = (MULTIPLE_ACTIVE_ROWS == 0 ? 1 : 2**BANK_ADDR_BITS);
-   localparam  NUM_ACTIVE_ROWS_WIDTH = (MULTIPLE_ACTIVE_ROWS == 0 ? 1 : clog2(2**BANK_ADDR_BITS));
+   localparam  NUM_ACTIVE_ROWS = (MULTIPLE_ACTIVE_ROWS == 0 ? 1 : 2**BANK_ADDR_WIDTH);
+   localparam  NUM_ACTIVE_ROWS_WIDTH = (MULTIPLE_ACTIVE_ROWS == 0 ? 1 : BANK_ADDR_WIDTH);
    
    reg         [ROW_LEN_C-1:0] activeRow_r [NUM_ACTIVE_ROWS_WIDTH-1:0];
    reg         [ROW_LEN_C-1:0] activeRow_x [NUM_ACTIVE_ROWS_WIDTH-1:0];
-   reg         [0:NUM_ACTIVE_ROWS-1] activeFlag_r = 0;   // indicates that some row in a bank is active.
-   reg         [0:NUM_ACTIVE_ROWS-1] activeFlag_x = 0; 
+   reg         [NUM_ACTIVE_ROWS-1:0] activeFlag_r = 0;   // indicates that some row in a bank is active.
+   reg         [NUM_ACTIVE_ROWS-1:0] activeFlag_x = 0; 
    reg         [NUM_ACTIVE_ROWS_WIDTH-1:0] bankIndex_s;  // bank address bits.
-   reg         [BANK_ADDR_BITS-1:0] activeBank_r;        // indicates the bank with the active row.
-   reg         [BANK_ADDR_BITS-1:0] activeBank_x;
+   reg         [BANK_ADDR_WIDTH-1:0] activeBank_r;       // indicates the bank with the active row.
+   reg         [BANK_ADDR_WIDTH-1:0] activeBank_x;
    reg         doActivate_s;    // indicates when a new row in a bank needs to be activated.
 
    // there is a command bit embedded within the SDRAM column address.
@@ -185,9 +192,9 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
 
    // these registers track the progress of read and write operations.
    reg         [CAS_CYCLES_C+1:0] rdPipeline_r = 0; 
-   reg         [CAS_CYCLES_C+1:0] rdPipeline_x = 0;  // pipeline of read ops in progress.
+   reg         [CAS_CYCLES_C+1:0] rdPipeline_x = 0;   // pipeline of read ops in progress.
    reg         wrPipeline_r = 0; 
-   reg         wrPipeline_x = 0;                     // pipeline of write ops (only need 1 cycle).
+   reg         wrPipeline_x = 0;                      // pipeline of write ops (only need 1 cycle).
 
    // registered outputs to host.
    reg         opBegun_r = 0; 
@@ -202,8 +209,8 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    reg         cke_x = 0;                             // Clock-enable bit.
    reg         [5:0] cmd_r = NOP_CMD_C;
    reg         [5:0] cmd_x = NOP_CMD_C;               // SDRAM command bits.
-   reg         [BANK_ADDR_BITS-1:0] ba_r; 
-   reg         [BANK_ADDR_BITS-1:0] ba_x;             // SDRAM bank address bits.
+   reg         [BANK_ADDR_WIDTH-1:0] ba_r; 
+   reg         [BANK_ADDR_WIDTH-1:0] ba_x;            // SDRAM bank address bits.
    reg         [SADDR_WIDTH-1:0] sAddr_r = 0; 
    reg         [SADDR_WIDTH-1:0] sAddr_x = 0;         // SDRAM row/column address.
    reg         [DATA_WIDTH-1:0] sData_r = 0;
@@ -223,14 +230,20 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    assign data_o = sdramData_r;     // data back to host
    assign opBegun_o = opBegun_r;    // true if requested operation has begun
 
+
    //*********************************************************************
    // compute the next state and outputs 
    //*********************************************************************
   
    always @(rd_i, wr_i, addr_i, data_i, sdramData_r, sdData_io, state_r, opBegun_x, activeFlag_r, 
-            activeRow_r[0], activeBank_r, rdPipeline_r, wrPipeline_r, sdramDataOppPhase_r, nopCntr_r, 
+            activeBank_r, rdPipeline_r, wrPipeline_r, sdramDataOppPhase_r, nopCntr_r, 
             lock_i, rfshCntr_r, timer_r, rasTimer_r, wrTimer_r, refTimer_r, cmd_r, col_s, ba_r, cke_r,
-            rdInProgress_s, activateInProgress_s, wrInProgress_s, doActivate_s, doSelfRfsh_s
+            rdInProgress_s, activateInProgress_s, wrInProgress_s, doActivate_s, doSelfRfsh_s,
+            `ifdef      MULTIPLE_ACTIVE_ROWS_D
+               activeRow_r[1], activeRow_r[0]
+            `else
+               activeRow_r[0]
+            `endif
             ) begin
 
   
@@ -246,7 +259,14 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
       sData_x        = data_i;         // output data from host to SDRAM
       state_x        = state_r;        // reload these registers and flags
       activeFlag_x   = activeFlag_r;   // with their existing values
-      activeRow_x[0] = activeRow_r[0];
+
+      `ifdef   MULTIPLE_ACTIVE_ROWS_D
+         activeRow_x[0] = activeRow_r[0];
+         activeRow_x[1] = activeRow_r[1];
+      `else
+         activeRow_x[0] = activeRow_r[0];
+      `endif
+
       activeBank_x   = activeBank_r;
       rfshCntr_x     = rfshCntr_r;
       
@@ -256,7 +276,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
       //*********************************************************************
 
       // extract bank field from host address
-      ba_x = addr_i[BANK_ADDR_BITS + ROW_LEN_C + COL_LEN_C - 1 : ROW_LEN_C + COL_LEN_C];
+      ba_x = addr_i[BANK_ADDR_WIDTH + ROW_LEN_C + COL_LEN_C - 1 : ROW_LEN_C + COL_LEN_C];
       if (MULTIPLE_ACTIVE_ROWS == 1) begin
          bank_s      = 0;
          bankIndex_s = ba_x;
@@ -642,7 +662,12 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
       end else begin
          state_r      <= state_x;
          activeBank_r <= activeBank_x;
-         activeRow_r[0]    <= activeRow_x[0];
+         `ifdef   MULTIPLE_ACTIVE_ROWS_D
+            activeRow_r[0] = activeRow_x[0];
+            activeRow_r[1] = activeRow_x[1];
+         `else
+            activeRow_r[0] = activeRow_x[0];
+         `endif
          activeFlag_r <= activeFlag_x;
          rfshCntr_r   <= rfshCntr_x;
          timer_r      <= timer_x;
