@@ -18,13 +18,16 @@
 // Based on code ©2011 - X Engineering Software Systems Corp. (www.xess.com)
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 
-
-//**************************************************************************************************
+//##################################################################################################
+//
 // Modules for passing bits back and forth from the host PC
 // to FPGA application logic through the JTAG port.
-//**************************************************************************************************
+//
+//##################################################################################################
 
+`default_nettype none
 `timescale 1ns / 1ps
+
 
 //**************************************************************************************************
 // Convenience wrapper for the BSCAN primitive
@@ -112,7 +115,7 @@ module HostIODut (fromDut_i, toDut_o, clkDut_o, drck1_i, reset_i, sel1_i, shift_
                        
 
    localparam  OPCODE_SIZE    = 'b01;
-   localparam  OPCODE_WRITE = 'b10;
+   localparam  OPCODE_WRITE   = 'b10;
    localparam  OPCODE_READ    = 'b11;
 
    localparam  PARAM_SIZE = 16;
@@ -132,9 +135,9 @@ module HostIODut (fromDut_i, toDut_o, clkDut_o, drck1_i, reset_i, sel1_i, shift_
    
    wire        moduleActive;
    
-   reg         [2:0] opcode;
+   reg         [1:0] opcode;
    reg         opcodeReceived;
-   reg         [15:0] bitCounter;
+   reg         [4:0] bitCounter;
 
    assign inShiftDR = (reset_i == 0 && shift_i == 1 && sel1_i == 1);
    
@@ -151,11 +154,9 @@ module HostIODut (fromDut_i, toDut_o, clkDut_o, drck1_i, reset_i, sel1_i, shift_
       else begin
          // Receive ID and Payload size (by shifting through payload counter -> id)
          if (headerReceived == 0) begin
-               headerReceived <= id[0];   // This will signal end once we get 1 set in payloadCount[31] above
-               id <= id >> 1;
-               id[7] <= payloadCount[0];
-               payloadCount <= payloadCount >> 1;
-               payloadCount[31] <= tdi_i;
+            payloadCount <= {tdi_i, payloadCount[31:1]};
+            id <= {payloadCount[0], id[7:1]};
+            headerReceived <= id[0];  
          end else begin                     // Once header is received decrement payload counter
             payloadCount <= payloadCount - 1;
          end
@@ -164,9 +165,8 @@ module HostIODut (fromDut_i, toDut_o, clkDut_o, drck1_i, reset_i, sel1_i, shift_
       if (moduleActive == 1 && reset_i == 0) begin
          // Receive two-bit opcode
          if (opcodeReceived == 0) begin
-            opcodeReceived <= opcode[0];
-            opcode <= opcode >> 1;
-            opcode[1] <= tdi_i;
+          opcode     <= {tdi_i,  opcode[1 : 1]};
+          opcodeReceived <= opcode[0];  // Opcode complete once LSB is set.
          end else begin
 
             case(opcode)
@@ -201,7 +201,7 @@ module HostIODut (fromDut_i, toDut_o, clkDut_o, drck1_i, reset_i, sel1_i, shift_
                
                OPCODE_READ:begin
                   if (bitCounter == 0) begin   
-                     bitCounter <= FROM_DUT_LENGTH;  // Set the number of bits to send.
+                     bitCounter <= FROM_DUT_LENGTH-1;  // Set the number of bits to send.
                      shiftReg[FROM_DUT_LENGTH-1:0] <= fromDut_i;
                   end else begin // Shift next bit of I/O parameters to the host.
                      shiftReg <= shiftReg >> 1;
@@ -225,9 +225,9 @@ module HostIODut (fromDut_i, toDut_o, clkDut_o, drck1_i, reset_i, sel1_i, shift_
    
    end
    
-   assign clkDut_o = activateClk == 1 ? !drck1_i : 0;
-   assign tdo1_o = (moduleActive == 1) ? shiftReg[0] : 0;
-   assign moduleActive = (id == ID && headerReceived == 1) ? 1 : 0;
+   assign clkDut_o = (activateClk == 1 ? !drck1_i : 0);
+   assign tdo1_o = (moduleActive == 1 ? shiftReg[0] : 0);
+   assign moduleActive = ((id == ID && headerReceived == 1) ? 1 : 0);
 
 endmodule
 
@@ -245,14 +245,15 @@ module RamCtrlSync (drck_i, clk_i, ctrlIn_i, ctrlOut_o, opBegun_i, doneIn_i, don
    input       opBegun_i;        // R/W operation begun signal from RAM domain.
    input       doneIn_i;         // R/W operation done signal from RAM domain.
    output reg  doneOut_o;        // R/W operation done signal to the JTAG domain.
-   wire        ctrlIn_s;         // JTAG domain control signal sync'ed to RAM domain.
+   
+   wire        ctrlIn;           // JTAG domain control signal sync'ed to RAM domain.
    
    // Sync the RAM control signal from the JTAG clock domain to the RAM domain.
    SyncToClock sync
    (
       .clk_i(clk_i), 
       .unsynced_i(ctrlIn_i), 
-      .synced_o(ctrlIn_s)
+      .synced_o(ctrlIn)
    );
 
    // Now raise-and-hold the output control signal to the RAM upon a rising edge of the input control signal.
@@ -262,7 +263,7 @@ module RamCtrlSync (drck_i, clk_i, ctrlIn_i, ctrlOut_o, opBegun_i, doneIn_i, don
    reg prevCtrlIn_v = 1;
   
    always @(posedge clk_i) begin
-      if (ctrlIn_s == 0) begin
+      if (ctrlIn == 0) begin
          // Lower the RAM control signal if the input signal has been deactivated.
          ctrlOut_o <= 0;
       end else if (prevCtrlIn_v == 0) begin
@@ -272,14 +273,14 @@ module RamCtrlSync (drck_i, clk_i, ctrlIn_i, ctrlOut_o, opBegun_i, doneIn_i, don
          // Lower the RAM control signal once the RAM has begun or completed the R/W operation.
          ctrlOut_o <= 0;
       end
-      prevCtrlIn_v = ctrlIn_s; // Store the previous value of the input control signal.
+      prevCtrlIn_v <= ctrlIn; // Store the previous value of the input control signal.
    end
   
-   // Inform the HostIoToRamCore when the memory operation is done. Latch the done signal
-   // from the RAM until the HostIoToRamCore sees it and lowers its control signal.
+   // Inform the HostIoRam when the memory operation is done. Latch the done signal
+   // from the RAM until the HostIoRam sees it and lowers its control signal.
    // Once the control signal is lowered, the RAM will eventually lower its done signal.
    always @(posedge clk_i) begin
-      if (ctrlIn_s == 0) begin
+      if (ctrlIn == 0) begin
          doneOut_o <= 0;
       end else if (doneIn_i == 1) begin
          doneOut_o <= 1;
@@ -299,6 +300,7 @@ module SyncToClock (clk_i, unsynced_i, synced_o);
    input       clk_i;
    input       unsynced_i;
    output      synced_o;
+   
    reg         [syncStages:1] sync_r;
 
    always @(posedge clk_i)
@@ -350,6 +352,7 @@ endmodule
 // Addr: |xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx|
 // Data: |xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx|
 //**************************************************************************************************
+
 module HostIoRam (addr_o, dataFromHost_o, dataToHost_i, wr_o, rd_o, rwDone_i, drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o);
                   
                   
@@ -387,7 +390,7 @@ module HostIoRam (addr_o, dataFromHost_o, dataToHost_i, wr_o, rd_o, rwDone_i, dr
    
    wire        inShiftDR;
 
-   reg [SHIFT_REG_SIZE-1:0] shiftReg;
+   reg         [SHIFT_REG_SIZE-1:0] shiftReg;
 
    reg         [7:0] id;
    reg         [31:0] payloadCount;
@@ -395,13 +398,13 @@ module HostIoRam (addr_o, dataFromHost_o, dataToHost_i, wr_o, rd_o, rwDone_i, dr
    
    wire        moduleActive;
    
-   reg         [2:0] opcode;
+   reg         [1:0] opcode;
    reg         opcodeReceived;
-   reg         [15:0] bitCounter;
+   reg         [4:0] bitCounter = 0;
 
    assign inShiftDR = (reset_i == 0 && shift_i == 1 && sel1_i == 1);
-   
-   
+
+
    always @(posedge drck1_i) begin
 
       // Reset state if exited SHIFT-DR state or instruction has been fully received
@@ -411,14 +414,12 @@ module HostIoRam (addr_o, dataFromHost_o, dataToHost_i, wr_o, rd_o, rwDone_i, dr
          payloadCount[31] <= 1;           // signals end of receiving 32+8 bits.
          headerReceived <= 0;
       end
-      else begin
+      else begin// if (d == 1) begin
          // Receive ID and Payload size (by shifting through payload counter -> id)
          if (headerReceived == 0) begin
-               headerReceived <= id[0];   // This will signal end once we get 1 set in payloadCount[31] above
-               id <= id >> 1;
-               id[7] <= payloadCount[0];
-               payloadCount <= payloadCount >> 1;
-               payloadCount[31] <= tdi_i;
+            payloadCount <= {tdi_i, payloadCount[31:1]};
+            id <= {payloadCount[0], id[7:1]};
+            headerReceived <= id[0];   // This will signal end once we get 1 set in payloadCount[31] above
          end else begin                   // Once header is received decrement payload counter
             payloadCount <= payloadCount - 1;
          end
@@ -427,17 +428,15 @@ module HostIoRam (addr_o, dataFromHost_o, dataToHost_i, wr_o, rd_o, rwDone_i, dr
       if ((moduleActive == 1 || writeToMem == 1) && reset_i == 0 ) begin
          // receive two-bit opcode
          if (opcodeReceived == 0) begin
-            opcodeReceived <= opcode[0];
-            opcode <= opcode >> 1;
-            opcode[1] <= tdi_i;
+            opcode     <= {tdi_i,  opcode[1 : 1]};
+            opcodeReceived <= opcode[0];  // Opcode complete once LSB is set.
          end else begin
 
             case(opcode)
-      
                OPCODE_SIZE : begin
                   if (bitCounter == 0) begin
-                     bitCounter <= PARAM_SIZE;  
                      shiftReg[PARAM_SIZE-1:0] <= {DATA_WIDTH[PARAM_SIZE/2-1:0], ADDR_WIDTH[PARAM_SIZE/2-1:0]};
+                     bitCounter <= SHIFT_REG_SIZE;                   
                   end else begin 
                      shiftReg <= shiftReg >> 1;
                      bitCounter <= bitCounter - 1;
@@ -447,18 +446,16 @@ module HostIoRam (addr_o, dataFromHost_o, dataToHost_i, wr_o, rd_o, rwDone_i, dr
                OPCODE_WRITE : begin
                   if (addrFromHostReceived == 0) begin
                      // get address
-                     addrFromHostReceived <= addrFromHost[0];
-                     addrFromHost <= addrFromHost >> 1;
-                     addrFromHost[ADDR_WIDTH-1] <= tdi_i;
+                     addrFromHost  <= {tdi_i, addrFromHost[ADDR_WIDTH-1:1]};
+                     addrFromHostReceived <= addrFromHost[0];  
                   end
                   else begin
                      // get data
                      if (shiftReg[0] == 0) begin
-                        shiftReg <= shiftReg >> 1;
-                        shiftReg[DATA_WIDTH-1] <= tdi_i; 
+                        shiftReg <= {tdi_i, shiftReg[DATA_WIDTH-1:1]};
                      end else begin
                      // write data memory
-                        dataFromHost_o[DATA_WIDTH-1:0] <= {tdi_i, shiftReg[DATA_WIDTH-1:1] }; 
+                        dataFromHost_o <= {tdi_i, shiftReg[DATA_WIDTH-1:1] }; 
                         shiftReg <= 0;
                         shiftReg[DATA_WIDTH-1] <= 1;
                         writeToMem <= 1;
@@ -476,19 +473,16 @@ module HostIoRam (addr_o, dataFromHost_o, dataToHost_i, wr_o, rd_o, rwDone_i, dr
                
                   if (addrFromHostReceived == 0) begin
                      // get address
-                     readFromMem <= addrFromHost[0];// Initiate read as soon as address is received
+                     addrFromHost <= {tdi_i, addrFromHost[ADDR_WIDTH-1 :1]};//addrFromHost >> 1;
                      addrFromHostReceived <= addrFromHost[0];
-                     addrFromHost <= addrFromHost >> 1;
-                     addrFromHost[ADDR_WIDTH-1] <= tdi_i;
-                     
+                     readFromMem <= addrFromHost[0];// Initiate read as soon as address is received
                      bitCounter <= DATA_WIDTH-1;// Output garbage word until 1st read has a chance to complete.
                   end else begin
                      if (dataFromMemReceived == 0) begin
-                     // Receive a complete data word from the host.
-                     
+                        // Receive a complete data word from the host.               
                         if (readFromMem == 1 && rwDone_i == 1) begin // Keep checking to see when memory data arrives.
                            readFromMem <= 0; // stop reading the mem
-                           dataFromMem <= dataToHost_i; 
+                           dataFromMem <= dataToHost_i;
                            dataFromMemReceived <= 1;
                            addrFromHost <= addrFromHost + 1;  // Point to next memory location to read from.
                         end else if (payloadCount >= SHIFT_REG_SIZE) begin
