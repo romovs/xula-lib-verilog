@@ -26,7 +26,7 @@
 `timescale 1ns / 1ps
 
 
-module test (clk_i, sdClk_o, sdClkFb_i, sdRas_bo, sdCas_bo, sdWe_bo, sdBs_o, sdAddr_o, sdData_io);
+module Test (clk_i, sdClk_o, sdClkFb_i, sdRas_bo, sdCas_bo, sdWe_bo, sdBs_o, sdAddr_o, sdData_io);
 
    localparam  SADDR_WIDTH  = 12;               // SDRAM-side address width.
    localparam  DATA_WIDTH   = 16;               // Host & SDRAM data width.
@@ -51,18 +51,23 @@ module test (clk_i, sdClk_o, sdClkFb_i, sdRas_bo, sdCas_bo, sdWe_bo, sdBs_o, sdA
    wire        tdo1_2;
 
 
-   assign sdClk_o = clk_i;
+   // Generate 100MHz clock and feed it to SDRAM.
+   // SDRAM will work fine with the default 12MHz clock too. This is just an usage example of ClkGen module.
+   ClkGen clkgen_inst 
+   (
+      .clk_i(clk_i), 
+      .clk_o(sdClk_o)
+   );
    
-   // Instantiate BSCAN primitive
+   // Instantiate BSCAN primitive for HostIo modules.
    BSCAN bscan
    (
       .drck1_o(drck1), .reset_o(reset), .sel1_o(sel1), .shift_o(shift), .tdi_o(tdi), .tdo1_i(tdo1)
    );
       
-   // SDRAM test   
-   testRam #(.SADDR_WIDTH(SADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH)) test1
+   // HostIoRam SDRAM R/W test   
+   TestRam #(.SADDR_WIDTH(SADDR_WIDTH), .DATA_WIDTH(DATA_WIDTH)) test1
    (
-      .clk_i(clk_i),
       .drck1_i(drck1), .reset_i(reset), .sel1_i(sel1), .shift_i(shift), .tdi_i(tdi), .tdo1_o(tdo1_1),
       .sdRas_bo(sdRas_bo), 
       .sdCas_bo(sdCas_bo),
@@ -73,12 +78,14 @@ module test (clk_i, sdClk_o, sdClkFb_i, sdRas_bo, sdCas_bo, sdWe_bo, sdBs_o, sdA
       .sdClkFb_i(sdClkFb_i)
    );
 
-   // counter test
-   testCnt test2
+   // HostIoDut test
+   TestCnt test2
    (
       .drck1_i(drck1), .reset_i(reset), .sel1_i(sel1), .shift_i(shift), .tdi_i(tdi), .tdo1_o(tdo1_2)
    );
    
+   // Since we are using multiple HostIo module instances, 
+   // their TDO outputs should be multiplexed into BSCAN primitive TDO input
    assign tdo1 = tdo1_1 | tdo1_2;
    
 endmodule
@@ -89,7 +96,7 @@ endmodule
 // reading back from the SDRAM memory.
 //**************************************************************************************************
 
-module testRam (drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o, clk_i,
+module TestRam (drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o,
                sdRas_bo, sdCas_bo, sdWe_bo, sdBs_o, sdAddr_o, sdData_io, sdClkFb_i);
                         
    parameter  SADDR_WIDTH  = 12;                // SDRAM-side address width.
@@ -102,8 +109,6 @@ module testRam (drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o, clk_i,
    output      [SADDR_WIDTH-1:0] sdAddr_o;      // SDRAM row/column address.
    inout       [DATA_WIDTH-1:0] sdData_io;      // Data to/from SDRAM.
    input       sdClkFb_i;                   
-                        
-   input       clk_i;
    
    input       drck1_i;
    input       reset_i;
@@ -165,7 +170,7 @@ module testRam (drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o, clk_i,
     
    assign rwDone_s = rdDone_s | wrDone_s;
     
-   SdramCtrl sdram 
+   SdramCtrl #(.FREQ(100.0)) sdram 
    (
       .clk_i(sdClkFb_i),
       .lock_i(1'b1),     
@@ -193,7 +198,7 @@ endmodule
 // a value to DUT (pulsing the counter's clock) and reading back the new counter value.
 //**************************************************************************************************
 
-module testCnt (drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o);
+module TestCnt (drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o);
 
    input       drck1_i;
    input       reset_i;
