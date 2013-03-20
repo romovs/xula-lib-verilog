@@ -123,8 +123,8 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    reg         [clog2(WR_CYCLES_C):0] wrTimer_x = 0;
    reg         [clog2(REF_CYCLES_C):0] refTimer_r = REF_CYCLES_C;// time between row refreshes.
    reg         [clog2(REF_CYCLES_C):0] refTimer_x = REF_CYCLES_C;
-   reg         [clog2(NROWS):0] rfshCntr_r = 0;          // counts refreshes that are needed.
-   reg         [clog2(NROWS):0] rfshCntr_x = 0;
+   reg         [clog2(RFSH_OPS_C):0] rfshCntr_r = 0;          // counts refreshes that are needed.
+   reg         [clog2(RFSH_OPS_C):0] rfshCntr_x = 0;
    reg         [clog2(MAX_NOPS):0] nopCntr_r = 0;        // counts consecutive NOP_C operations.
    reg         [clog2(MAX_NOPS):0] nopCntr_x = 0;
 
@@ -350,7 +350,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
       //*********************************************************************
 
       // enter self-refresh if neither a read or write is requested for MAX_NOP consecutive cycles.
-      if ((rd_i == 1) || (wr_i == 1)) begin
+      if (rd_i == 1 || wr_i == 1) begin
          // any read or write resets NOP counter and exits self-refresh state
          nopCntr_x    = 0;
          doSelfRfsh_s = 0;
@@ -485,7 +485,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                //*********************************************************************
                 if (rfshCntr_r != 0) begin
                   // wait for any row activations, writes or reads to finish before doing a precharge
-                  if ((activateInProgress_s == 0) && (wrInProgress_s == 0) && (rdInProgress_s == 0)) begin
+                  if (activateInProgress_s == 0 && wrInProgress_s == 0 && rdInProgress_s == 0) begin
                     cmd_x                 = PCHG_CMD_C;  // initiate precharge of the SDRAM
                     sAddr_x[CMDBIT_POS_C] = ALL_BANKS_C; // precharge all banks
                     timer_x               = RP_CYCLES_C; // set timer for this operation
@@ -499,11 +499,11 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                 end else if (rd_i == 1) begin
                   // Wait one clock cycle if the bank address has just changed and each bank has its own active row.
                   // This gives extra time for the row activation circuitry.
-                  if ((ba_x == ba_r) || (MULTIPLE_ACTIVE_ROWS == 0)) begin
+                  if (ba_x == ba_r || MULTIPLE_ACTIVE_ROWS == 0) begin
                    // activate a new row if the current read is outside the active row or bank
                     if (doActivate_s == 1) begin
                       // activate new row only if all previous activations, writes, reads are done
-                      if ((activateInProgress_s == 0) && (wrInProgress_s == 0) && (rdInProgress_s == 0)) begin
+                      if (activateInProgress_s == 0 && wrInProgress_s == 0 && rdInProgress_s == 0) begin
                         cmd_x                     = PCHG_CMD_C;  // initiate precharge of the SDRAM
                         sAddr_x[CMDBIT_POS_C]     = ONE_BANK_C; // precharge this bank
                         timer_x                   = RP_CYCLES_C;  // set timer for this operation
@@ -513,7 +513,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                     // read from the currently active row if no previous read operation
                     // is in progress or if pipeline reads are enabled
                     // we can always initiate a read even if a write is already in progress
-                    end else if ((rdInProgress_s == 0) || PIPE_EN == 1) begin
+                    end else if (rdInProgress_s == 0 || PIPE_EN == 1) begin
                       cmd_x        = READ_CMD_C;   // initiate a read of the SDRAM
                       // insert a flag into the pipeline shift register that will exit the end
                       // of the shift register when the data from the SDRAM is available
@@ -605,7 +605,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
            // place the SDRAM into self-refresh and keep it there until further notice           
            //*********************************************************************
            SELFREFRESH: begin
-             if ((doSelfRfsh_s == 1) || (lock_i == 0)) begin
+             if (doSelfRfsh_s == 1 || lock_i == 0) begin
                // keep the SDRAM in self-refresh mode as long as requested and until there is a stable clock
                cmd_x = RFSH_CMD_C;// output the refresh command; this is only needed on the first clock cycle
                cke_x = 0;              // disable the SDRAM clock
