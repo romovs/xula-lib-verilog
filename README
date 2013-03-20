@@ -1,11 +1,25 @@
-Verilog-2001 port of HostIO and SdramCtrl for XuLA-200 board.
+Collection of helper modules for Xula-200 FPGA development board written in Verilog-2001.
+
+Includes OmniVision camera initialization utilities, SDRAM controller, and PC <-> FPGA communication module.
 
 
 Files: 
 ------
 
-SdramCtrl.v        - SDRAM controller.
-HostIO.v           - PC <-> FPGA communication through the JTAG port.
-Math.v             - Math helper functions for other modules.
+camera/            - Modules for initializing OmniVision camera chips.   
+  SCCBCtrl.v         - SCCB controller. Provides communication over SCCB with OV cameras.
+  CameraSetup.v      - Top module for camera initialization.
+  OV7670Init.v       - Initialization register set for OV7670 model.
+
 ClkGen.v           - Helper modules for working with clock signals.
-Test.v             - Test module.
+
+HostIo.v           - PC <-> FPGA communication through the JTAG port.
+
+SdramCtrl.v        - Single port SDRAM controller.
+
+Math.v             - Math helper functions for other modules.
+
+Test.v             - Top test/example module.
+
+
+
