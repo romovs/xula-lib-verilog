@@ -51,9 +51,8 @@ module Test (clk_i, sdClk_o, sdClkFb_i, sdRas_bo, sdCas_bo, sdWe_bo, sdBs_o, sdA
    wire        tdo1_2;
 
 
-   // Generate 100MHz clock and feed it to SDRAM.
-   // SDRAM will work fine with the default 12MHz clock too. This is just an usage example of ClkGen module.
-   ClkGen clkgen_inst 
+   // Generate 24MHz clock and feed it to SDRAM.
+   ClkGen #(.MUL(2), .DIV(1), .IN_FREQ(12.0)) clkgen_inst
    (
       .clk_i(clk_i), 
       .clk_o(sdClk_o)
@@ -170,7 +169,7 @@ module TestRam (drck1_i, reset_i, sel1_i, shift_i, tdi_i, tdo1_o,
     
    assign rwDone_s = rdDone_s | wrDone_s;
     
-   SdramCtrl #(.FREQ(100.0)) sdram 
+   SdramCtrl #(.FREQ(24.0)) sdram 
    (
       .clk_i(sdClkFb_i),
       .lock_i(1'b1),     
