@@ -47,28 +47,21 @@ endfunction
 
 function integer ceil;
    input real value;
-   
-   real val1;
+
+	integer val_int;
+   real val_real_floor;
 
    begin  
-      val1 = value;
-
-      if ( value > 1.0) begin
-         while (val1 >= 1.0) begin
-            val1 = val1 - 1.0;
-         end 
-         
-         if (val1 > 0.0)
-            ceil = value + 1.0;
-         else
-            ceil = value;
+      if (value > 1.0) begin
+         val_int = value;
+         val_real_floor = val_int;
+         ceil = (value > val_real_floor) ? value + 1.0 : value;
       end else if (value > 0.0) begin
          ceil = 1;
       end else begin
          ceil = 0;
       end
-
-   end
+	end
    
 endfunction
 
