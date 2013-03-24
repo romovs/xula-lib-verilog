@@ -89,7 +89,7 @@ module SCCBCtrl (clk_i, rst_i, sccb_clk_i, data_pulse_i, addr_i, data_i, data_o,
          end
 
          if (start_i == 1) begin
-               case(stm)
+                (* parallel_case *) case(stm)
                   // Initialize
                   7'd0 : bit_out <= 1;
                   7'd1 : bit_out <= 1;
