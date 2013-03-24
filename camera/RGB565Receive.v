@@ -45,9 +45,9 @@ module RGB656Receive (d_i, vsync_i, href_i, pclk_i, rst_i, pixelReady_o, pixel_o
       end else begin
          if (frameValid == 1 && vsync_i == 0 && href_i == 1) begin
             if (odd == 0) begin    
-               pixel_o[7:0] <= d_i;
-            end else begin
                pixel_o[15:8] <= d_i;
+            end else begin
+               pixel_o[7:0] <= d_i;
                pixelReady_o <= 1;   
             end
             odd <= ~odd;
