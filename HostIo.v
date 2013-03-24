@@ -114,9 +114,9 @@ module HostIODut (fromDut_i, toDut_o, clkDut_o, drck1_i, reset_i, sel1_i, shift_
    output wire tdo1_o;                          // Bit from the DUT to the host.
                        
 
-   localparam  OPCODE_SIZE    = 'b01;
-   localparam  OPCODE_WRITE   = 'b10;
-   localparam  OPCODE_READ    = 'b11;
+   localparam  [1:0] OPCODE_SIZE    = 2'b01;
+   localparam  [1:0] OPCODE_WRITE   = 2'b10;
+   localparam  [1:0] OPCODE_READ    = 2'b11;
 
    localparam  PARAM_SIZE = 16;
 
@@ -169,7 +169,7 @@ module HostIODut (fromDut_i, toDut_o, clkDut_o, drck1_i, reset_i, sel1_i, shift_
           opcodeReceived <= opcode[0];  // Opcode complete once LSB is set.
          end else begin
 
-            case(opcode)
+            (* parallel_case *) case(opcode)
                OPCODE_SIZE : begin
                   if (bitCounter == 0) begin
                      bitCounter <= PARAM_SIZE;  // Set the number of bits to send.
@@ -286,28 +286,6 @@ module RamCtrlSync (drck_i, clk_i, ctrlIn_i, ctrlOut_o, opBegun_i, doneIn_i, don
          doneOut_o <= 1;
       end
    end
-endmodule
-
-
-//**************************************************************************************************
-// Clock domain crossing
-//**************************************************************************************************
-
-module SyncToClock (clk_i, unsynced_i, synced_o);
-
-   parameter   syncStages = 2;   //number of stages in syncing register
-
-   input       clk_i;
-   input       unsynced_i;
-   output      synced_o;
-   
-   reg         [syncStages:1] sync_r;
-
-   always @(posedge clk_i)
-      sync_r <= {sync_r[syncStages-1:1], unsynced_i};
-
-   assign synced_o = sync_r[syncStages];
-   
 endmodule
 
 
@@ -432,7 +410,7 @@ module HostIoRam (addr_o, dataFromHost_o, dataToHost_i, wr_o, rd_o, rwDone_i, dr
             opcodeReceived <= opcode[0];  // Opcode complete once LSB is set.
          end else begin
 
-            case(opcode)
+            (* parallel_case *) case(opcode)
                OPCODE_SIZE : begin
                   if (bitCounter == 0) begin
                      shiftReg[PARAM_SIZE-1:0] <= {DATA_WIDTH[PARAM_SIZE/2-1:0], ADDR_WIDTH[PARAM_SIZE/2-1:0]};
