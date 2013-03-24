@@ -56,7 +56,7 @@ module CameraSetup (clk_i, rst_i, done, sioc_o, siod_io);
    reg         [clog2(SCCB_PERIOD):0] sccb_clk_cnt = 0;
    reg         sccb_clk = 0;
    reg         [1:0] stm = 0;
-   reg         [6:0] reg_data_index = 0; 
+   reg         [5:0] reg_data_index = 0; 
    wire        [7:0] reg_data_rcvd;
    wire        [16:0] reg_data_snd;
    reg         rw;
@@ -104,7 +104,7 @@ module CameraSetup (clk_i, rst_i, done, sioc_o, siod_io);
          end
       end
    end
-   
+
    // Read/Write the registers.
    always @(posedge clk_i or negedge rst_i) begin
    
@@ -114,19 +114,25 @@ module CameraSetup (clk_i, rst_i, done, sioc_o, siod_io);
          stm <= 0;
          start <= 0;
          rw <= 0;   
-         reg_setup_tmr <= 32'd0;
+         reg_setup_tmr <= 0;
          do_tsreg_delay <= 0;
-      end else if (do_tsreg_delay == 1) begin   // once register have een writen we need to wait for T_SREG ms. 
-            if (reg_setup_tmr == SREG_CYCLES) begin
+      // once registers have been written we need to wait for T_SREG ms. 
+      end else if (do_tsreg_delay == 1) begin   
+            if (reg_setup_tmr == SREG_CYCLES)
                done <= 1;
-            end else begin
+            else 
                reg_setup_tmr <= reg_setup_tmr + 1;
-            end
+      // delay for T_SREG ms if needed 
+      end else if  (reg_data_snd == {16'hf0f0, 1'b1}) begin
+            if (reg_setup_tmr  == SREG_CYCLES)
+               reg_data_index <= reg_data_index + 1;
+            else
+               reg_setup_tmr <= reg_setup_tmr + 1;
       end else if (data_pulse) begin
-         if(reg_data_snd != {16'hffff, 1'b1}) begin
+        if(reg_data_snd != {16'hffff, 1'b1}) begin
             done <= 0;
-            case(stm)
-               0: begin
+            (* parallel_case *) case(stm)
+               2'd0: begin
                   if (transact_done == 1) 
                      stm <= 2'd0;
                   else 
@@ -135,7 +141,7 @@ module CameraSetup (clk_i, rst_i, done, sioc_o, siod_io);
                   start <= 1;
                   rw <= reg_data_snd[0];
                   end
-               1: begin
+               2'd1: begin
                   if (transact_done == 1) begin
                      if (ack_error == 1) 
                         stm <= 2'd0;
@@ -146,7 +152,7 @@ module CameraSetup (clk_i, rst_i, done, sioc_o, siod_io);
                      start <= 0;
                   end
                end
-               2: begin
+               2'd2: begin
                   reg_data_index <= reg_data_index + 1;
                   stm <= 0;
                   start <= 0;
@@ -158,6 +164,7 @@ module CameraSetup (clk_i, rst_i, done, sioc_o, siod_io);
             start <= 0;
             rw <= 0;
             do_tsreg_delay <= 1;
+            reg_setup_tmr <= 0;
         end
       end
    end
