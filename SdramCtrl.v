@@ -95,50 +95,50 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    output      sdDqml_o;                  // Enable lower-byte of SDRAM databus if true.
    
    
-   localparam  OUTPUT_C = 1;              // direction of dataflow w.r.t. this controller.
-   localparam  INPUT_C = 0;
-   localparam  NOP_C = 0;                 // no operation.
-   localparam  READ_C = 1;                // read operation.
-   localparam  WRITE_C = 1;               // write operation.
+   localparam  [0:0] OUTPUT_C = 1;        // direction of dataflow w.r.t. this controller.
+   localparam  [0:0] INPUT_C = 0;
+   localparam  [0:0] NOP_C = 0;           // no operation.
+   localparam  [0:0] READ_C = 1;          // read operation.
+   localparam  [0:0] WRITE_C = 1;         // write operation.
 
    // SDRAM timing parameters converted into clock cycles (based on FREQ).    
-   localparam  INIT_CYCLES_C = ceil(T_INIT*FREQ/1000.0);    // SDRAM power-on initialization interval.
-   localparam  RAS_CYCLES_C = ceil(T_RAS*FREQ/1000.0);      // active-to-precharge interval.
-   localparam  RCD_CYCLES_C = pfx(ceil(T_RCD*FREQ/1000.0)); // active-to-R/W interval.
-   localparam  REF_CYCLES_C = ceil(T_REF*FREQ/1000.0/NROWS);// interval between row refreshes.
-   localparam  RFC_CYCLES_C = ceil(T_RFC*FREQ/1000.0);      // refresh operation interval. 
-   localparam  RP_CYCLES_C = ceil(T_RP*FREQ/1000.0);        // precharge operation interval.
-   localparam  WR_CYCLES_C = 2;                             // write recovery time.
-   localparam  XSR_CYCLES_C = ceil(T_XSR*FREQ/1000.0);      // exit self-refresh time.
-   localparam  MODE_CYCLES_C = 2;                           // mode register setup time.
-   localparam  CAS_CYCLES_C = 3;                            // CAS latency.
-   localparam  RFSH_OPS_C = 8;                              // number of refresh operations needed to init SDRAM.
+   localparam  INIT_CYCLES = ceil(T_INIT*FREQ/1000.0);    // SDRAM power-on initialization interval.
+   localparam  RAS_CYCLES = ceil(T_RAS*FREQ/1000.0);      // active-to-precharge interval.
+   localparam  RCD_CYCLES = pfx(ceil(T_RCD*FREQ/1000.0)); // active-to-R/W interval.
+   localparam  REF_CYCLES = ceil(T_REF*FREQ/1000.0/NROWS);// interval between row refreshes.
+   localparam  RFC_CYCLES = ceil(T_RFC*FREQ/1000.0);      // refresh operation interval. 
+   localparam  RP_CYCLES = ceil(T_RP*FREQ/1000.0);        // precharge operation interval.
+   localparam  WR_CYCLES = 2;                             // write recovery time.
+   localparam  XSR_CYCLES = ceil(T_XSR*FREQ/1000.0);      // exit self-refresh time.
+   localparam  MODE_CYCLES = 2;                           // mode register setup time.
+   localparam  CAS_CYCLES = 3;                            // CAS latency.
+   localparam  RFSH_OPS_C = 8;                            // number of refresh operations needed to init SDRAM.
   
    // timer registers that count down times for various SDRAM operations.
-   reg         [clog2(INIT_CYCLES_C):0] timer_r = 0;     // current SDRAM op time.
-   reg         [clog2(INIT_CYCLES_C):0] timer_x = 0;
-   reg         [clog2(RAS_CYCLES_C):0] rasTimer_r = 0;   // active-to-precharge time.
-   reg         [clog2(RAS_CYCLES_C):0] rasTimer_x = 0;
-   reg         [clog2(WR_CYCLES_C):0] wrTimer_r = 0;     // write-to-precharge time.
-   reg         [clog2(WR_CYCLES_C):0] wrTimer_x = 0;
-   reg         [clog2(REF_CYCLES_C):0] refTimer_r = REF_CYCLES_C;// time between row refreshes.
-   reg         [clog2(REF_CYCLES_C):0] refTimer_x = REF_CYCLES_C;
-   reg         [clog2(RFSH_OPS_C):0] rfshCntr_r = 0;          // counts refreshes that are needed.
+   reg         [clog2(INIT_CYCLES):0] timer_r = 0;    // current SDRAM op time.
+   reg         [clog2(INIT_CYCLES):0] timer_x = 0;
+   reg         [clog2(RAS_CYCLES):0] rasTimer_r = 0;  // active-to-precharge time.
+   reg         [clog2(RAS_CYCLES):0] rasTimer_x = 0;
+   reg         [clog2(WR_CYCLES):0] wrTimer_r = 0;    // write-to-precharge time.
+   reg         [clog2(WR_CYCLES):0] wrTimer_x = 0;
+   reg         [clog2(REF_CYCLES):0] refTimer_r = REF_CYCLES;// time between row refreshes.
+   reg         [clog2(REF_CYCLES):0] refTimer_x = REF_CYCLES;
+   reg         [clog2(RFSH_OPS_C):0] rfshCntr_r = 0;         // counts refreshes that are needed.
    reg         [clog2(RFSH_OPS_C):0] rfshCntr_x = 0;
-   reg         [clog2(MAX_NOPS):0] nopCntr_r = 0;        // counts consecutive NOP_C operations.
+   reg         [clog2(MAX_NOPS):0] nopCntr_r = 0;      // counts consecutive NOP_C operations.
    reg         [clog2(MAX_NOPS):0] nopCntr_x = 0;
 
    reg          doSelfRfsh_s;       // active when the NOP counter hits zero and self-refresh can start.
 
    // states of the SDRAM controller state machine.
-   localparam  INITWAIT    = 'b000;       // initialization - waiting for power-on initialization to complete.
-   localparam  INITPCHG    = 'b001;       // initialization - initial precharge of SDRAM banks.
-   localparam  INITSETMODE = 'b010;       // initialization - set SDRAM mode.
-   localparam  INITRFSH    = 'b011;       // initialization - do initial refreshes.
-   localparam  RW          = 'b100;       // read/write/refresh the SDRAM.
-   localparam  ACTIVATE    = 'b101;       // open a row of the SDRAM for reading/writing.
-   localparam  REFRESHROW  = 'b110;       // refresh a row of the SDRAM.
-   localparam  SELFREFRESH = 'b111;       // keep SDRAM in self-refresh mode with CKE low.
+   localparam  [2:0] INITWAIT    = 3'b000;       // initialization - waiting for power-on initialization to complete.
+   localparam  [2:0] INITPCHG    = 3'b001;       // initialization - initial precharge of SDRAM banks.
+   localparam  [2:0] INITSETMODE = 3'b010;       // initialization - set SDRAM mode.
+   localparam  [2:0] INITRFSH    = 3'b011;       // initialization - do initial refreshes.
+   localparam  [2:0] RW          = 3'b100;       // read/write/refresh the SDRAM.
+   localparam  [2:0] ACTIVATE    = 3'b101;       // open a row of the SDRAM for reading/writing.
+   localparam  [2:0] REFRESHROW  = 3'b110;       // refresh a row of the SDRAM.
+   localparam  [2:0] SELFREFRESH = 3'b111;       // keep SDRAM in self-refresh mode with CKE low.
 
    reg         [2:0] state_r = INITWAIT;  // state register and next state.
    reg         [2:0] state_x = INITWAIT;  // state register and next state.
@@ -163,7 +163,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    
    reg         [BANK_ADDR_WIDTH-1:0] bank_s; // bank address bits.
    reg         [ROW_LEN_C-1:0] row_s;        // row address within bank.
-   reg         [SADDR_WIDTH-1:0] col_s;      // column address within row.
+   reg         [COL_LEN_C-1:0] col_s;        // column address within row.
 
    // registers that store the currently active row in each bank of the SDRAM.
    localparam  NUM_ACTIVE_ROWS = (MULTIPLE_ACTIVE_ROWS == 0 ? 1 : 2**BANK_ADDR_WIDTH);
@@ -180,8 +180,8 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
 
    // there is a command bit embedded within the SDRAM column address.
    localparam  CMDBIT_POS_C      = 10;       // position of command bit.
-   localparam  AUTO_PCHG_ON_C    = 1;        // CMDBIT value to auto-precharge the bank.
-   localparam  AUTO_PCHG_OFF_C   = 0;        // CMDBIT value to disable auto-precharge.
+   localparam  [0:0] AUTO_PCHG_ON_C    = 1;  // CMDBIT value to auto-precharge the bank.
+   localparam  [0:0] AUTO_PCHG_OFF_C   = 0;  // CMDBIT value to disable auto-precharge.
    localparam  ONE_BANK_C        = 0;        // CMDBIT value to select one bank.
    localparam  ALL_BANKS_C       = 1;        // CMDBIT value to select all banks.
 
@@ -191,8 +191,8 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
    reg         activateInProgress_s;         // row activation is in progress.
 
    // these registers track the progress of read and write operations.
-   reg         [CAS_CYCLES_C+1:0] rdPipeline_r = 0; 
-   reg         [CAS_CYCLES_C+1:0] rdPipeline_x = 0;   // pipeline of read ops in progress.
+   reg         [CAS_CYCLES+1:0] rdPipeline_r = 0; 
+   reg         [CAS_CYCLES+1:0] rdPipeline_x = 0;   // pipeline of read ops in progress.
    reg         wrPipeline_r = 0; 
    reg         wrPipeline_x = 0;                      // pipeline of write ops (only need 1 cycle).
 
@@ -286,21 +286,18 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
       end
       // extract row, column fields from host address
       row_s = addr_i[ROW_LEN_C + COL_LEN_C - 1 : COL_LEN_C];
-      // extend column (if needed) until it is as large as the (SDRAM address bus - 1)
-      col_s = 0; // set it to all zeroes
       col_s[COL_LEN_C-1 : 0] = addr_i[COL_LEN_C-1 : 0];
       // by default, set SDRAM address to the column address with interspersed
       // command bit set to disable auto-precharge
-      sAddr_x   = {col_s[SADDR_WIDTH-1 : CMDBIT_POS_C], AUTO_PCHG_OFF_C, col_s[CMDBIT_POS_C-1 : 0]};
+      sAddr_x   = {1'b0, AUTO_PCHG_OFF_C, col_s[COL_LEN_C-1 : 0]};
     
-
       //*********************************************************************
       // manage the read and write operation pipelines
       //*********************************************************************
 
       // determine if read operations are in progress by the presence of
       // READ flags in the read pipeline 
-      if (rdPipeline_r[CAS_CYCLES_C+1 : 1] != 0) begin
+      if (rdPipeline_r[CAS_CYCLES+1 : 1] != 0) begin
          rdInProgress_s = 1;
       end else begin
          rdInProgress_s = 0;
@@ -308,7 +305,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
       rdPending_o = rdInProgress_s; // tell the host if read operations are in progress
 
       // enter NOPs into the read and write pipeline shift registers by default
-      rdPipeline_x = {NOP_C, rdPipeline_r[CAS_CYCLES_C+1 : 1]};
+      rdPipeline_x = {NOP_C, rdPipeline_r[CAS_CYCLES+1 : 1]};
       wrPipeline_x = NOP_C;
 
       // transfer data from SDRAM to the host data register if a read flag has exited the pipeline
@@ -401,7 +398,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
       end else begin
          // on timeout, reload the timer with the interval between row refreshes
          // and increment the counter for the number of row refreshes that are needed
-         refTimer_x = REF_CYCLES_C;
+         refTimer_x = REF_CYCLES;
          if (ENABLE_REFRESH == 1) begin
             rfshCntr_x = rfshCntr_r + 1;
          end else begin
@@ -421,7 +418,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
          //*********************************************************************
          // compute the next state and outputs 
          //*********************************************************************
-         case (state_r)
+         (* parallel_case *) case (state_r)
 
            //*********************************************************************
            // let clock stabilize and then wait for the SDRAM to initialize 
@@ -429,7 +426,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
            INITWAIT: begin
                 if (lock_i == 1) begin
                   // wait for SDRAM power-on initialization once the clock is stable
-                  timer_x = INIT_CYCLES_C;  // set timer for initialization duration
+                  timer_x = INIT_CYCLES;  // set timer for initialization duration
                   state_x = INITPCHG;
                 end else begin
                   // disable SDRAM clock and return to this state if the clock is not stable
@@ -446,7 +443,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
            INITPCHG: begin
                 cmd_x                 = PCHG_CMD_C;
                 sAddr_x[CMDBIT_POS_C] = ALL_BANKS_C; // precharge all banks
-                timer_x               = RP_CYCLES_C; // set timer for precharge operation duration
+                timer_x               = RP_CYCLES; // set timer for precharge operation duration
                 rfshCntr_x            = RFSH_OPS_C;  // set counter for refresh ops needed after precharge
                 state_x               = INITRFSH;
                 status_o              = 'b0010;
@@ -457,7 +454,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
            //*********************************************************************
            INITRFSH: begin
                 cmd_x      = RFSH_CMD_C;
-                timer_x    = RFC_CYCLES_C;      // set timer to refresh operation duration
+                timer_x    = RFC_CYCLES;      // set timer to refresh operation duration
                 rfshCntr_x = rfshCntr_r - 1;    // decrement refresh operation counter
                 if (rfshCntr_r == 1) begin
                   state_x = INITSETMODE;        // set the SDRAM mode once all refresh ops are done
@@ -469,9 +466,8 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
            //*********************************************************************
            INITSETMODE: begin
                 cmd_x         = MODE_CMD_C;
-                sAddr_x       = 0;
                 sAddr_x[11:0] = MODE_C;         // output mode register bits on the SDRAM address bits
-                timer_x       = MODE_CYCLES_C;  // set timer for mode setting operation duration
+                timer_x       = MODE_CYCLES;  // set timer for mode setting operation duration
                 state_x       = RW;
                 status_o      = 'b0100;
             end
@@ -488,7 +484,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                   if (activateInProgress_s == 0 && wrInProgress_s == 0 && rdInProgress_s == 0) begin
                     cmd_x                 = PCHG_CMD_C;  // initiate precharge of the SDRAM
                     sAddr_x[CMDBIT_POS_C] = ALL_BANKS_C; // precharge all banks
-                    timer_x               = RP_CYCLES_C; // set timer for this operation
+                    timer_x               = RP_CYCLES; // set timer for this operation
                     activeFlag_x          = 0; // all rows are inactive after a precharge operation
                     state_x               = REFRESHROW;  // refresh the SDRAM after the precharge
                   end
@@ -506,7 +502,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                       if (activateInProgress_s == 0 && wrInProgress_s == 0 && rdInProgress_s == 0) begin
                         cmd_x                     = PCHG_CMD_C;  // initiate precharge of the SDRAM
                         sAddr_x[CMDBIT_POS_C]     = ONE_BANK_C; // precharge this bank
-                        timer_x                   = RP_CYCLES_C;  // set timer for this operation
+                        timer_x                   = RP_CYCLES;  // set timer for this operation
                         activeFlag_x[bankIndex_s] = 0; // rows in this bank are inactive after a precharge operation
                         state_x                   = ACTIVATE;  // activate the new row after the precharge is done
                       end
@@ -517,7 +513,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                       cmd_x        = READ_CMD_C;   // initiate a read of the SDRAM
                       // insert a flag into the pipeline shift register that will exit the end
                       // of the shift register when the data from the SDRAM is available
-                      rdPipeline_x = {READ_C, rdPipeline_r[CAS_CYCLES_C+1 : 1]};
+                      rdPipeline_x = {READ_C, rdPipeline_r[CAS_CYCLES+1 : 1]};
                       opBegun_x    = 1;  // tell the host the requested operation has begun
                     end
                   end
@@ -535,7 +531,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                       if ((activateInProgress_s == 0) && (wrInProgress_s == 0) && (rdInProgress_s == 0)) begin
                         cmd_x                     = PCHG_CMD_C;  // initiate precharge of the SDRAM
                         sAddr_x[CMDBIT_POS_C]     = ONE_BANK_C;  // precharge this bank
-                        timer_x                   = RP_CYCLES_C;  // set timer for this operation
+                        timer_x                   = RP_CYCLES;  // set timer for this operation
                         activeFlag_x[bankIndex_s] = 0;  // rows in this bank are inactive after a precharge operation
                         state_x                   = ACTIVATE; // activate the new row after the precharge is done
                       end
@@ -544,7 +540,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                       cmd_x           = WRITE_CMD_C;  // initiate the write operation
                       sDataDir_x      = OUTPUT_C; // turn on drivers to send data to SDRAM
                       // set timer so precharge doesn't occur too soon after write operation
-                      wrTimer_x       = WR_CYCLES_C;
+                      wrTimer_x       = WR_CYCLES;
                      // insert a flag into the 1-bit pipeline shift register that will exit on the
                      // next cycle.  The write into SDRAM is not actually done by that time, but
                      // this doesn't matter to the host
@@ -561,7 +557,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                   if ((activateInProgress_s == 0) && (wrInProgress_s == 0) && (rdInProgress_s == 0)) begin
                     cmd_x                 = PCHG_CMD_C;  // initiate precharge of the SDRAM
                     sAddr_x[CMDBIT_POS_C] = ALL_BANKS_C;  // precharge all banks
-                    timer_x               = RP_CYCLES_C;  // set timer for this operation
+                    timer_x               = RP_CYCLES;  // set timer for this operation
                     activeFlag_x          = 0; // all rows are inactive after a precharge operation
                     state_x               = SELFREFRESH;  // self-refresh the SDRAM after the precharge
                   end
@@ -586,8 +582,8 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                 activeBank_x              = bank_s;
                 activeRow_x[bankIndex_s]  = row_s;    // store the new active SDRAM row address
                 activeFlag_x[bankIndex_s] = 1;        // the SDRAM is now active
-                rasTimer_x                = RAS_CYCLES_C;  // minimum time before another precharge can occur 
-                timer_x                   = RCD_CYCLES_C;  // minimum time before a read/write operation can occur
+                rasTimer_x                = RAS_CYCLES;  // minimum time before another precharge can occur 
+                timer_x                   = RCD_CYCLES;  // minimum time before a read/write operation can occur
                 state_x                   = RW; // return to do read/write operation that initiated this activation
                 status_o                  = 'b1010;
             end
@@ -596,7 +592,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
            //*********************************************************************
            REFRESHROW: begin
                 cmd_x      = RFSH_CMD_C;
-                timer_x    = RFC_CYCLES_C;      // refresh operation interval
+                timer_x    = RFC_CYCLES;      // refresh operation interval
                 rfshCntr_x = rfshCntr_r - 1;    // decrement the number of needed row refreshes
                 state_x    = RW;                // process more SDRAM operations after refresh is done
                 status_o   = 'b1011;
@@ -614,7 +610,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
                cke_x        = 1;       // restart the SDRAM clock
                rfshCntr_x   = 0;       // no refreshes are needed immediately after leaving self-refresh
                activeFlag_x = 0;       // self-refresh deactivates all rows
-               timer_x      = XSR_CYCLES_C; // wait this long until read and write operations can resume
+               timer_x      = XSR_CYCLES; // wait this long until read and write operations can resume
                state_x      = RW;
              end
              status_o = 'b1100;
@@ -645,7 +641,7 @@ module SdramCtrl (clk_i, lock_i, rst_i, rd_i, wr_i, earlyOpBegun_o, opBegun_o, r
          activeFlag_r <= 0;
          rfshCntr_r   <= 0;
          timer_r      <= 0;
-         refTimer_r   <= REF_CYCLES_C;
+         refTimer_r   <= REF_CYCLES;
          rasTimer_r   <= 0;
          wrTimer_r    <= 0;
          nopCntr_r    <= 0;
