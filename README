@@ -1,25 +1,27 @@
-Collection of helper modules for Xula-200 FPGA development board written in Verilog-2001.
+                                xula-lib-verilog
 
-Includes OmniVision camera initialization utilities, SDRAM controller, and PC <-> FPGA communication module.
+
+Introduction:
+-------------
+
+xula-lib-verilog is a set of Verilog-2001 helper modules for XuLA-200 FPGA 
+development board. It includes modules for interacting with OmniVision image 
+sensors, SDRAM controller for the on-board RAM chip, and a module for 
+communicating between PC <-> FPGA through JTAG primitive.
 
 
 Files: 
 ------
 
-camera/            - Modules for initializing OmniVision camera chips.   
-  SCCBCtrl.v         - SCCB controller. Provides communication over SCCB with OV cameras.
-  CameraSetup.v      - Top module for camera initialization.
-  OV7670Init.v       - Initialization register set for OV7670 model.
-
-ClkGen.v           - Helper modules for working with clock signals.
-
-HostIo.v           - PC <-> FPGA communication through the JTAG port.
-
+camera/            - Modules for interacting with OmniVision image sensors.
+  CameraSetup.v      - Top module for camera initialization.  
+  OV7670Init.v       - Registers configuration for OV7670 model.
+  RGB565Receive.v    - Module for receiving RGB565 pixel data from camera.
+  SCCBCtrl.v         - Provides communication over SCCB with OV cameras.
+Clk.v              - Helper modules for working with clock signals.
+HostIo.v           - PC <-> FPGA communication through the JTAG primitive.
 SdramCtrl.v        - Single port SDRAM controller.
-
 Math.v             - Math helper functions for other modules.
-
 Test.v             - Top test/example module.
-
 
 
