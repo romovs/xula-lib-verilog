@@ -18,6 +18,7 @@ camera/            - Modules for interacting with OmniVision image sensors.
   OV7670Init.v       - Registers configuration for OV7670 model.
   RGB565Receive.v    - Module for receiving RGB565 pixel data from camera.
   SCCBCtrl.v         - Provides communication over SCCB with OV cameras.
+host_PC/           - Simple host PC test application for Linux.
 Clk.v              - Helper modules for working with clock signals.
 HostIo.v           - PC <-> FPGA communication through the JTAG primitive.
 SdramCtrl.v        - Single port SDRAM controller.
