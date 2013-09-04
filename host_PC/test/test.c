@@ -34,7 +34,7 @@ int main(int argc,char **argv) {
 	
 
 	printf("========================================================================\n");
-	printf("Test HostIoRam...\n");
+	printf("Testing HostIoRam...\n");
 
 	ram = XsMemInit(USB_ID, 3, &addrWidth, &dataWidth);	// initialize HostIoRam
 	printf(" Addr Width: %d\n Data Width: %d\n\n", addrWidth, dataWidth);
@@ -105,7 +105,7 @@ int main(int argc,char **argv) {
 		}
 	}
 
-	printf("Done.\n", num, addr);
+	printf("Done.\n");
 	
 
 	free(rData);
