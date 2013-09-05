@@ -1,13 +1,15 @@
                                 xula-lib-verilog
 
 
-Introduction:
--------------
+About:
+------
 
 xula-lib-verilog is a set of Verilog-2001 helper modules for XuLA-200 FPGA 
 development board. It includes modules for interacting with OmniVision image 
 sensors, SDRAM controller for the on-board RAM chip, and a module for 
 communicating between PC <-> FPGA through JTAG primitive.
+
+Based on original XESS Corp. VHDL code.
 
 
 Files: 
